@@ -262,5 +262,14 @@ install(TARGETS
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+# Install launch & config files
+install(DIRECTORY 
+    launch
+    DESTINATION share/${PROJECT_NAME}
+    )
+install(DIRECTORY 
+    config
+    DESTINATION share/${PROJECT_NAME}
+    )
 
 ament_package()

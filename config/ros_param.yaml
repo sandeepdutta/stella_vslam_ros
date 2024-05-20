@@ -1,3 +1,5 @@
-run_slam:
+stella_vslam:
   ros__parameters:
     publish_tf: false
+    use_exact_time: true
+    odom2d: false
