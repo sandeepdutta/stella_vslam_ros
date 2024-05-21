@@ -1,7 +1,7 @@
 #include <stella_vslam_ros.h>
 #include <stella_vslam/publish/map_publisher.h>
 #include <stella_vslam/data/keyframe.h>
-
+#include <stella_vslam/data/landmark.h>
 #include <chrono>
 
 #include <tf2_eigen/tf2_eigen.hpp>
@@ -32,6 +32,7 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
       pose_pub_(node_->create_publisher<nav_msgs::msg::Odometry>("~/camera_pose", 1)),
       keyframes_pub_(node_->create_publisher<geometry_msgs::msg::PoseArray>("~/keyframes", 1)),
       keyframes_2d_pub_(node_->create_publisher<geometry_msgs::msg::PoseArray>("~/keyframes_2d", 1)),
+      pointcloud_pub_(node_->create_publisher<sensor_msgs::msg::PointCloud2>("~/landmarks", 1)),
       map_to_odom_broadcaster_(std::make_shared<tf2_ros::TransformBroadcaster>(node_)),
       tf_(std::make_unique<tf2_ros::Buffer>(node_->get_clock())),
       transform_listener_(std::make_shared<tf2_ros::TransformListener>(*tf_)) {
@@ -117,6 +118,69 @@ void system::publish_keyframes(const rclcpp::Time& stamp) {
     keyframes_pub_->publish(keyframes_msg);
     keyframes_2d_pub_->publish(keyframes_2d_msg);
 }
+
+void system::publish_landmarks(const rclcpp::Time& stamp) {
+
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    cloud_msg.header.frame_id = map_frame_;
+    cloud_msg.header.stamp =stamp;
+
+    std::vector<std::shared_ptr<stella_vslam::data::landmark>> all_landmarks;
+    std::set<std::shared_ptr<stella_vslam::data::landmark>> local_landmarks;
+    slam_->get_map_publisher()->get_landmarks(all_landmarks, local_landmarks);
+
+     // Define the fields of the PointCloud2 message
+    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+    modifier.resize(all_landmarks.size() + local_landmarks.size());
+
+     // Use PointCloud2Iterator to set the values
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(cloud_msg, "r");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(cloud_msg, "g");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(cloud_msg, "b");
+
+     // Set all_landmarks with color gray
+    for (const auto& lm : all_landmarks) {
+        auto opoint = lm->get_pos_in_world();
+        auto point = rot_ros_to_cv_map_frame_ * opoint;
+        *iter_x = point.x();
+        *iter_y = point.y();
+        *iter_z = point.z();
+        *iter_r = 100;
+        *iter_g = 100;
+        *iter_b = 100;
+        ++iter_x;
+        ++iter_y;
+        ++iter_z;
+        ++iter_r;
+        ++iter_g;
+        ++iter_b;
+    }
+
+     // Set local_landmarks with color red
+    for (const auto& lm : local_landmarks) {
+        auto opoint = lm->get_pos_in_world();
+        auto point = rot_ros_to_cv_map_frame_ * opoint;
+        *iter_x = point.x();
+        *iter_y = point.y();
+        *iter_z = point.z();
+        *iter_r = 255;
+        *iter_g = 0;
+        *iter_b = 0;
+        ++iter_x;
+        ++iter_y;
+        ++iter_z;
+        ++iter_r;
+        ++iter_g;
+        ++iter_b;
+    }
+
+     pointcloud_pub_->publish(cloud_msg);
+}
+
 
 void system::setParams() {
     odom_frame_ = std::string("odom");

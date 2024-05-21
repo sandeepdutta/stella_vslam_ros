@@ -31,7 +31,8 @@ def conditionalLoad(context, *args, **kwargs):
                                                          'log_level' : 'info',
                                                          'map_db_path_in': map_db_path,
                                                          'map_db_path_out': map_db_path,
-                                                         'viewer': "socket_publisher",
+                                                         'viewer': "pointcloud_publisher",
+                                                         "camera_frame": "rs_bottom_color_optical_frame",
                                                          'disable_mapping': False,
                                                          'temporal_mapping': True
                                                          }],
@@ -54,7 +55,8 @@ def conditionalLoad(context, *args, **kwargs):
                                                   'log_level' : 'info',
                                                   'map_db_path_in': map_db_path,
                                                   'map_db_path_out': map_db_path,
-                                                  'viewer': "socket_publisher",
+                                                  'viewer': "pointcloud_publisher",
+                                                  "camera_frame": "rs_bottom_color_optical_frame",
                                                   'disable_mapping': False,
                                                   'temporal_mapping': False
                                                   }],

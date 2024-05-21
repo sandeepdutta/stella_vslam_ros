@@ -5,6 +5,7 @@
 #include <stella_vslam/config.h>
 #include <stella_vslam/util/stereo_rectifier.h>
 
+
 #include <rclcpp/rclcpp.hpp>
 #include <image_transport/image_transport.hpp>
 #include <image_transport/subscriber_filter.hpp>
@@ -15,6 +16,8 @@
 #include <cv_bridge/cv_bridge.h>
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -32,6 +35,7 @@ public:
            const std::string& mask_img_path);
     void publish_pose(const Eigen::Matrix4d& cam_pose_wc, const rclcpp::Time& stamp);
     void publish_keyframes(const rclcpp::Time& stamp);
+    void publish_landmarks(const rclcpp::Time& stamp);
     void setParams();
     std::shared_ptr<stella_vslam::system> slam_;
     std::shared_ptr<stella_vslam::config> cfg_;
@@ -42,6 +46,7 @@ public:
     std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> pose_pub_;
     std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_pub_;
     std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_2d_pub_;
+    std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>> pointcloud_pub_;
     std::shared_ptr<rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>>
         init_pose_sub_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> map_to_odom_broadcaster_;
@@ -87,10 +92,10 @@ public:
 template<class M, class NodeType = rclcpp::Node>
 class ModifiedSubscriber : public message_filters::Subscriber<M> {
 public:
-    ModifiedSubscriber(typename message_filters::Subscriber<M>::NodePtr node, const std::string& topic, const rmw_qos_profile_t qos = rmw_qos_profile_default)
+    ModifiedSubscriber(typename message_filters::Subscriber<M>::NodePtr node, const std::string& topic, const rmw_qos_profile_t qos = rmw_qos_profile_services_default)
         : message_filters::Subscriber<M>(node, topic, qos) {
     }
-    ModifiedSubscriber(NodeType* node, const std::string& topic, const rmw_qos_profile_t qos = rmw_qos_profile_default)
+    ModifiedSubscriber(NodeType* node, const std::string& topic, const rmw_qos_profile_t qos = rmw_qos_profile_services_default)
         : message_filters::Subscriber<M>(node, topic, qos) {
     }
     ModifiedSubscriber(

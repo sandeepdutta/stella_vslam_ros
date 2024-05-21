@@ -82,6 +82,7 @@ System::System(
         if (viewer_string_ != "pangolin_viewer"
             && viewer_string_ != "socket_publisher"
             && viewer_string_ != "iridescence_viewer"
+            && viewer_string_ != "pointcloud_publisher"
             && viewer_string_ != "none") {
             RCLCPP_FATAL(get_logger(), "invalid arguments (--viewer)");
             return;
@@ -225,6 +226,17 @@ System::System(
                 publisher_->run();
 #endif
             }
+            if (viewer_string_ == "pointcloud_publisher") {
+                while(rclcpp::ok()) {
+                    auto stamp = this->get_clock()->now();
+                    slam_ros_->publish_landmarks(stamp);
+                    std::this_thread::sleep_for(std::chrono::seconds(1)); // 1Hz
+                     if (slam_->terminate_is_requested()) {
+                        break ;
+                    }
+                }
+            }
+
             if (slam_->terminate_is_requested()) {
                 // wait until the loop BA is finished
                 while (slam_->loop_BA_is_running()) {
