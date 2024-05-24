@@ -5,13 +5,18 @@
 
 Camera:
   name: "Realsens D435 in RGBD mode"
-  setup: "RGBD"
+  setup: "stereo"
   model: "perspective"
 
-  fx: 610.543579101562
-  fy: 610.674682617188
-  cx: 419.73681640625
-  cy: 242.103820800781
+  #fx: 610.543579101562
+  #fy: 610.674682617188
+  #cx: 419.73681640625
+  #cy: 242.103820800781
+
+  fx: 424.194549560547
+  fy: 424.194549560547
+  cx: 428.250396728516
+  cy: 238.973098754883
 
   k1: 0.0
   k2: 0.0
@@ -19,12 +24,12 @@ Camera:
   p2: 0.0
   k3: 0.0
 
-  fps: 60.0
+  fps: 30.0
   cols: 848
   rows: 480
-  color_order: "RGB"
+  color_order: "Gray"
   
-  #focal_x_baseline: 30527.0
+  focal_x_baseline: 21.21
   #depth_threshold: 305.27
 
 
@@ -34,7 +39,9 @@ Camera:
 
 Tracking:
   margin_local_map_projection: 10.0
+  reloc_angle_threshold: 0.45
   enable_auto_relocalization: true
+  enable_temporal_keyframe_only_tracking: true
 
 Preprocessing:
   min_size: 800
@@ -63,3 +70,5 @@ Mapping:
 #=========================#
 LoopDetector:
   enabled: true
+
+

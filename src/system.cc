@@ -147,11 +147,17 @@ System::System(
     }
     slam_->startup(need_initialize);
     if (disable_mapping) {
+        RCLCPP_INFO(get_logger(), "Mapping module is disabled");
         slam_->disable_mapping_module();
+    } else {
+        RCLCPP_INFO(get_logger(), "Mapping module is enabled");
     }
-    else if (temporal_mapping) {
+    if (temporal_mapping) {
+        RCLCPP_INFO(get_logger(), "Temporal mapping is enabled");
         slam_->enable_temporal_mapping();
         slam_->disable_loop_detector();
+    } else {
+        RCLCPP_INFO(get_logger(), "Temporal mapping is disabled");
     }
 
     if (slam_->get_camera()->setup_type_ == stella_vslam::camera::setup_type_t::Monocular) {

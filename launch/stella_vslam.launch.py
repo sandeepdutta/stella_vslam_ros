@@ -23,7 +23,7 @@ def conditionalLoad(context, *args, **kwargs):
                                             package='stella_vslam_ros',
                                             plugin='stella_vslam_ros::System',
                                             namespace='stella_vslam',
-                                            parameters=[{'publish_tf' : False,
+                                            parameters=[{'publish_tf' : True,
                                                          'use_exact_time' : True,
                                                          'odom2d' : False ,
                                                          'vocab_file_path' : vocab_path,
@@ -34,12 +34,14 @@ def conditionalLoad(context, *args, **kwargs):
                                                          'viewer': "pointcloud_publisher",
                                                          "camera_frame": "rs_bottom_color_optical_frame",
                                                          'disable_mapping': False,
-                                                         'temporal_mapping': True
+                                                         'temporal_mapping': False,
+                                                         'reset_on_start': False
                                                          }],
                                             extra_arguments=[{'use_intra_process_comms': True}],
                                             remappings=[
-                                                ('/stella_vslam/camera/color/image_raw', '/rs_bottom/camera/color/image_raw'),
-                                                ('/stella_vslam/camera/depth/image_raw', '/rs_bottom/camera/depth/image_rect_raw'),
+                                                ('/stella_vslam/camera/left/image_raw',  '/rs_bottom/camera/infra1/image_rect_raw'),
+                                                ('/stella_vslam/camera/right/image_raw', '/rs_bottom/camera/infra2/image_rect_raw'),
+                                                ('/stella_vslam/run_slam/wheel_odom', '/diffbot_base_controller/odom'),
                                             ])]))
     else:
         actions.append(LoadComposableNodes (target_container=container_name,
@@ -47,7 +49,7 @@ def conditionalLoad(context, *args, **kwargs):
                                      package='stella_vslam_ros',
                                      plugin='stella_vslam_ros::System',
                                      namespace='stella_vslam',
-                                     parameters=[{'publish_tf' : False,
+                                     parameters=[{'publish_tf' : True,
                                                   'use_exact_time' : True,
                                                   'odom2d' : False ,
                                                   'vocab_file_path' : vocab_path,
@@ -57,13 +59,14 @@ def conditionalLoad(context, *args, **kwargs):
                                                   'map_db_path_out': map_db_path,
                                                   'viewer': "pointcloud_publisher",
                                                   "camera_frame": "rs_bottom_color_optical_frame",
-                                                  'disable_mapping': False,
-                                                  'temporal_mapping': False
+                                                  'disable_mapping': True,
+                                                  'temporal_mapping': True
                                                   }],
                                      extra_arguments=[{'use_intra_process_comms': True}],
                                      remappings=[
-                                         ('/stella_vslam/camera/color/image_raw', '/rs_bottom/camera/color/image_raw'),
-                                         ('/stella/camera/depth/image_raw', '/rs_bottom/camera/depth/image_rect_raw'),
+                                                ('/stella_vslam/camera/left/image_raw',  '/rs_bottom/camera/infra1/image_rect_raw'),
+                                                ('/stella_vslam/camera/right/image_raw', '/rs_bottom/camera/infra2/image_rect_raw'),
+                                                ('/stella_vslam/run_slam/wheel_odom', '/diffbot_base_controller/odom'),
                                      ])]))
     return actions
 

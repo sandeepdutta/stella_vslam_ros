@@ -33,7 +33,7 @@ public:
     system(const std::shared_ptr<stella_vslam::system>& slam,
            rclcpp::Node* node,
            const std::string& mask_img_path);
-    void publish_pose(const Eigen::Matrix4d& cam_pose_wc, const rclcpp::Time& stamp);
+    void publish_pose(const std::shared_ptr<Eigen::Matrix4d> cam_pose_wc, const rclcpp::Time& stamp);
     void publish_keyframes(const rclcpp::Time& stamp);
     void publish_landmarks(const rclcpp::Time& stamp);
     void setParams();
@@ -49,6 +49,7 @@ public:
     std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>> pointcloud_pub_;
     std::shared_ptr<rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>>
         init_pose_sub_;
+    std::shared_ptr<rclcpp::Subscription<nav_msgs::msg::Odometry>> wheel_odom_sub_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> map_to_odom_broadcaster_;
     std::string odom_frame_;
     std::string map_frame_;
@@ -72,10 +73,47 @@ public:
 
     std::string encoding_;
 
+    // Support functions to get Transform fro Odometry
+    tf2::Transform getTransformFromOdometry(const nav_msgs::msg::Odometry& odom) {
+        // Extract position
+        const auto& position = odom.pose.pose.position;
+        tf2::Vector3 tf_position(position.x, position.y, position.z);
+        // Extract orientation
+        const auto& orientation = odom.pose.pose.orientation;
+        tf2::Quaternion tf_orientation(orientation.x, orientation.y, orientation.z, orientation.w);
+        // Create a tf2::Transform object from position and orientation
+        tf2::Transform transform(tf_orientation, tf_position);
+
+        return transform;
+    }
+    Eigen::Affine3d convertOdometryToEigenAffine3d(const nav_msgs::msg::Odometry& odom) {
+        // Extract position from the odometry message
+        const auto& position = odom.pose.pose.position;
+        Eigen::Vector3d eigen_position(position.x, position.y, position.z);
+
+        // Extract orientation from the odometry message
+        const auto& orientation = odom.pose.pose.orientation;
+        Eigen::Quaterniond eigen_quaternion(orientation.w, orientation.x, orientation.y, orientation.z);
+
+        // Construct the Eigen::Affine3d object using position and orientation
+        Eigen::Affine3d eigen_transform = Eigen::Affine3d::Identity();
+        eigen_transform.prerotate(eigen_quaternion);
+        eigen_transform.pretranslate(eigen_position);
+
+        return eigen_transform;
+    }
 private:
     void init_pose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
-
+    // Callback function for wheel odometry
+    void RecordWheelOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg_wheel_odom);
+    // Returns the wheel Odometry Transform
+    Eigen::Affine3d getWheelOdom() ;
     Eigen::AngleAxisd rot_ros_to_cv_map_frame_;
+
+    // Wheel odometry related variables
+    Eigen::Affine3d  wheelOdom_;
+    std::mutex       wheelOdom_lock_;
+    bool             wheelOdom_initialized_;
 };
 
 class mono : public system {
