@@ -44,10 +44,16 @@ foreach(EXECUTABLE_TARGET IN LISTS EXECUTABLE_TARGETS)
                 PRIVATE -DUSE_GOOGLE_PERFTOOLS)
         target_link_libraries(${EXECUTABLE_TARGET} PRIVATE
                 ${GPERFTOOLS_LIBRARIES})
-    endif()
+    endif() 
+    rosidl_get_typesupport_target(
+        CXX_TYPESUPPORT_TARGET
+        "${PROJECT_NAME}"
+        "rosidl_typesupport_cpp"
+   ) 
 
     # setup yaml-cpp
     target_link_libraries(${EXECUTABLE_TARGET} PRIVATE
+        ${CXX_TYPESUPPORT_TARGET}
         yaml-cpp)
 
     if(spdlog_FOUND)
@@ -57,7 +63,7 @@ foreach(EXECUTABLE_TARGET IN LISTS EXECUTABLE_TARGETS)
 
     # build
     target_include_directories(${EXECUTABLE_TARGET}
-                               PRIVATE ${rclcpp_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
+                               PRIVATE $CMAKE_CURRENT_BINARY_DIR/rosidl_typesupport_cpp ${rclcpp_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
     target_link_libraries(${EXECUTABLE_TARGET}
                           PRIVATE stella_vslam::stella_vslam ${rclcpp_LIBRARIES} ${OpenCV_LIBRARIES})
     ament_target_dependencies(${EXECUTABLE_TARGET}
@@ -75,7 +81,8 @@ foreach(EXECUTABLE_TARGET IN LISTS EXECUTABLE_TARGETS)
                               tf2_geometry_msgs
                               tf2_msgs
                               tf2_ros
-                              rosbag2_cpp)
+                              rosbag2_cpp
+                              std_srvs)
     install(TARGETS ${EXECUTABLE_TARGET}
             DESTINATION lib/${PROJECT_NAME})
 

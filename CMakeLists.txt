@@ -128,7 +128,15 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(rosbag2_cpp REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
+# status messages 
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/StellaVslamStatus.msg"
+  DEPENDENCIES std_msgs
+)
 # thread library
 find_package(Threads REQUIRED)
 
@@ -136,7 +144,7 @@ find_package(Threads REQUIRED)
 find_package(stella_vslam REQUIRED)
 
 # OpenCV
-find_package(OpenCV 3.3.1 QUIET)
+find_package(OpenCV REQUIRED)
 if(NOT OpenCV_FOUND)
     find_package(OpenCV 4.0)
     if(NOT OpenCV_FOUND)
@@ -197,6 +205,15 @@ add_subdirectory(src)
 add_library(stella_vslam_ros_system SHARED
   src/system.cc src/stella_vslam_ros.cc
 )
+rosidl_get_typesupport_target(
+  CXX_TYPESUPPORT_TARGET
+  "${PROJECT_NAME}"
+  "rosidl_typesupport_cpp"
+) 
+
+target_link_libraries(stella_vslam_ros_system PRIVATE
+  ${CXX_TYPESUPPORT_TARGET}
+)
 if(pangolin_viewer_FOUND)
     # set macro flag
     target_compile_definitions(stella_vslam_ros_system
@@ -224,6 +241,7 @@ endif()
 
 # TODO: Move heder files to include directory
 target_include_directories(stella_vslam_ros_system PRIVATE
+  $CMAKE_CURRENT_BINARY_DIR/rosidl_typesupport_cpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:src>)
 rclcpp_components_register_node(stella_vslam_ros_system PLUGIN "stella_vslam_ros::System" EXECUTABLE system)
@@ -243,10 +261,13 @@ ament_target_dependencies(stella_vslam_ros_system
   tf2_eigen
   tf2_geometry_msgs
   tf2_msgs
-  tf2_ros)
+  tf2_ros
+  std_srvs)
+  
 target_link_libraries(stella_vslam_ros_system PRIVATE
   yaml-cpp
   stella_vslam::stella_vslam)
+
 if(spdlog_FOUND)
   target_link_libraries(stella_vslam_ros_system PRIVATE
     spdlog::spdlog)
@@ -262,6 +283,8 @@ install(TARGETS
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+
+
 # Install launch & config files
 install(DIRECTORY 
     launch
@@ -272,4 +295,5 @@ install(DIRECTORY
     DESTINATION share/${PROJECT_NAME}
     )
 
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()

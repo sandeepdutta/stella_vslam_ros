@@ -27,6 +27,8 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 
+#include <std_srvs/srv/empty.hpp>
+#include <stella_vslam_ros/msg/stella_vslam_status.hpp>
 namespace stella_vslam_ros {
 class system {
 public:
@@ -36,7 +38,9 @@ public:
     void publish_pose(const std::shared_ptr<Eigen::Matrix4d> cam_pose_wc, const rclcpp::Time& stamp);
     void publish_keyframes(const rclcpp::Time& stamp);
     void publish_landmarks(const rclcpp::Time& stamp);
+    void publish_status(const rclcpp::Time& stamp) ;
     void setParams();
+    void capture_image(const cv::Mat &img);
     std::shared_ptr<stella_vslam::system> slam_;
     std::shared_ptr<stella_vslam::config> cfg_;
     rclcpp::Node* node_;
@@ -47,9 +51,11 @@ public:
     std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_pub_;
     std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_2d_pub_;
     std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>> pointcloud_pub_;
+    std::shared_ptr<rclcpp::Publisher<stella_vslam_ros::msg::StellaVslamStatus>> status_pub_;
     std::shared_ptr<rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>>
         init_pose_sub_;
     std::shared_ptr<rclcpp::Subscription<nav_msgs::msg::Odometry>> wheel_odom_sub_;
+    std::shared_ptr<rclcpp::Service<std_srvs::srv::Empty>> reset_srv_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> map_to_odom_broadcaster_;
     std::string odom_frame_;
     std::string map_frame_;
@@ -58,6 +64,13 @@ public:
     std::string camera_optical_frame_;
     std::unique_ptr<tf2_ros::Buffer> tf_;
     std::shared_ptr<tf2_ros::TransformListener> transform_listener_;
+
+    // If true will capture images
+    bool img_capture_;
+    bool img_overlay_stats_; // will overlay stats on the image
+
+    // If true will publish the status of the SLAM system
+    bool publish_status_;
 
     // If true, publish tf from map_frame to odom_frame
     bool publish_tf_;
@@ -73,19 +86,7 @@ public:
 
     std::string encoding_;
 
-    // Support functions to get Transform fro Odometry
-    tf2::Transform getTransformFromOdometry(const nav_msgs::msg::Odometry& odom) {
-        // Extract position
-        const auto& position = odom.pose.pose.position;
-        tf2::Vector3 tf_position(position.x, position.y, position.z);
-        // Extract orientation
-        const auto& orientation = odom.pose.pose.orientation;
-        tf2::Quaternion tf_orientation(orientation.x, orientation.y, orientation.z, orientation.w);
-        // Create a tf2::Transform object from position and orientation
-        tf2::Transform transform(tf_orientation, tf_position);
-
-        return transform;
-    }
+    // Support functions to get Transform fro Odometry message
     Eigen::Affine3d convertOdometryToEigenAffine3d(const nav_msgs::msg::Odometry& odom) {
         // Extract position from the odometry message
         const auto& position = odom.pose.pose.position;
@@ -103,17 +104,24 @@ public:
         return eigen_transform;
     }
 private:
-    void init_pose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
-    // Callback function for wheel odometry
-    void RecordWheelOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg_wheel_odom);
-    // Returns the wheel Odometry Transform
-    Eigen::Affine3d getWheelOdom() ;
     Eigen::AngleAxisd rot_ros_to_cv_map_frame_;
 
     // Wheel odometry related variables
     Eigen::Affine3d  wheelOdom_;
     std::mutex       wheelOdom_lock_;
     bool             wheelOdom_initialized_;
+
+    void init_pose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+    // Callback function for wheel odometry
+    void RecordWheelOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg_wheel_odom);
+    // Returns the wheel Odometry Transform
+    Eigen::Affine3d getWheelOdom() ;
+
+
+    // Capture image related variables
+    float img_capture_distance_thr_;
+    float img_capture_angle_thr_;
+    std::string img_capture_path_;
 };
 
 class mono : public system {

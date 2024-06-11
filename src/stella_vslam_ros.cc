@@ -1,5 +1,6 @@
 #include <stella_vslam_ros.h>
 #include <stella_vslam/publish/map_publisher.h>
+#include <stella_vslam/publish/frame_publisher.h>
 #include <stella_vslam/data/keyframe.h>
 #include <stella_vslam/data/landmark.h>
 #include <chrono>
@@ -33,6 +34,7 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
       keyframes_pub_(node_->create_publisher<geometry_msgs::msg::PoseArray>("~/keyframes", 1)),
       keyframes_2d_pub_(node_->create_publisher<geometry_msgs::msg::PoseArray>("~/keyframes_2d", 1)),
       pointcloud_pub_(node_->create_publisher<sensor_msgs::msg::PointCloud2>("~/landmarks", 1)),
+      status_pub_(node_->create_publisher<stella_vslam_ros::msg::StellaVslamStatus>("~/status", 1)),
       map_to_odom_broadcaster_(std::make_shared<tf2_ros::TransformBroadcaster>(node_)),
       tf_(std::make_unique<tf2_ros::Buffer>(node_->get_clock())),
       transform_listener_(std::make_shared<tf2_ros::TransformListener>(*tf_)) {
@@ -46,6 +48,16 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
         "~/wheel_odom", 1,
         std::bind(&system::RecordWheelOdom,
                   this, std::placeholders::_1));
+    reset_srv_ = node_->create_service<std_srvs::srv::Empty>(
+        "~/reset",
+        [this](const std::shared_ptr<std_srvs::srv::Empty::Request> request,
+               std::shared_ptr<std_srvs::srv::Empty::Response> response) {
+            (void) request;
+            (void) response;
+            slam_->request_reset();
+            RCLCPP_INFO(node_->get_logger(), "Reset requested for SLAM system");
+            return;
+        });
     setParams();
     rot_ros_to_cv_map_frame_ = (Eigen::Matrix3d() << 0, 0, 1,
                                 -1, 0, 0,
@@ -57,7 +69,10 @@ void system::publish_pose(const std::shared_ptr<Eigen::Matrix4d> cam_pose_wc, co
     static Eigen::Affine3d map_to_camera_last;
     static Eigen::Affine3d wheel_odom_last;
     Eigen::Affine3d map_to_camera;
-
+    if (cam_pose_wc == nullptr) { 
+        //RCLCPP_ERROR(node_->get_logger(), "Camera pose and wheel odometry are not initialized");
+        return;
+    }
     if (cam_pose_wc != nullptr) {
         // Extract rotation matrix and translation vector from
         Eigen::Matrix3d rot(cam_pose_wc->block<3, 3>(0, 0));
@@ -202,6 +217,19 @@ void system::publish_landmarks(const rclcpp::Time& stamp) {
      pointcloud_pub_->publish(cloud_msg);
 }
 
+void system::publish_status(const rclcpp::Time& stamp) {
+
+    stella_vslam_ros::msg::StellaVslamStatus status_msg;
+    status_msg.header.frame_id = map_frame_;
+    status_msg.header.stamp = stamp;
+
+    auto fp = slam_->get_frame_publisher();
+    status_msg.tracking_status =            fp->get_tracking_state_int();
+    status_msg.tracking_time_elapsed_ms =   fp->get_tracking_time_elapsed_ms();
+    status_msg.extraction_time_elapsed_ms = fp->get_extraction_time_elapsed_ms();
+
+    status_pub_->publish(status_msg);
+}
 
 void system::setParams() {
     odom_frame_ = std::string("odom");
@@ -230,6 +258,24 @@ void system::setParams() {
 
     encoding_ = "";
     encoding_ = node_->declare_parameter("encoding", encoding_);
+
+    img_capture_ = false;
+    img_capture_ = node_->declare_parameter("img_capture", img_capture_);
+
+    img_overlay_stats_ = false;
+    img_overlay_stats_ = node_->declare_parameter("img_overlay_stats", img_overlay_stats_);
+
+    publish_status_ = false;
+    publish_status_ = node_->declare_parameter("publish_status", publish_status_);
+
+    img_capture_path_ = "";
+    img_capture_path_ = node_->declare_parameter("img_capture_path", img_capture_path_);
+
+    img_capture_distance_thr_ = 0.5;
+    img_capture_distance_thr_ = node_->declare_parameter("img_capture_distance_thr", img_capture_distance_thr_);
+
+    img_capture_angle_thr_ = 0.5;
+    img_capture_angle_thr_ = node_->declare_parameter("img_capture_angle_thr", img_capture_angle_thr_);
 }
 
 void system::init_pose_callback(
@@ -308,6 +354,70 @@ Eigen::Affine3d system::getWheelOdom()
 {
   std::lock_guard<std::mutex> lock(wheelOdom_lock_);
   return wheelOdom_;
+}
+
+void system::capture_image(const cv::Mat& img) {
+    static int img_count = 0;
+    static Eigen::Affine3d last_pose;
+
+    // first: initialize and return
+    if (img_count == 0) {
+        last_pose = getWheelOdom();
+        img_count++;
+        return ;
+    }
+    Eigen::Affine3d curr_pose = getWheelOdom();
+    // compute translation distance betweeen curr_pose and last_pose
+    double distance = (curr_pose.translation() - last_pose.translation()).norm();
+    // compute angle in radians between curr_pose and last_pose
+    Eigen::Quaterniond q1(curr_pose.rotation());
+    Eigen::Quaterniond q2(last_pose.rotation());
+    double angle = q1.angularDistance(q2);
+    
+    if (distance >= img_capture_distance_thr_ || angle >= img_capture_angle_thr_) {
+        // Create an image to hold the RGB result
+        cv::Mat rgbImg;
+        std::string img_path = img_capture_path_ + std::to_string(img_count) + ".png";
+        RCLCPP_INFO(node_->get_logger(), "Capture image %d -> %s", img_count, img_path.c_str());
+        // Convert the grayscale image to RGB
+        cv::cvtColor(img, rgbImg, cv::COLOR_GRAY2BGR);
+        // overlaying statis image cannot be used for vocabulary generation
+        if (img_overlay_stats_) {
+            // comute histogram of the grayscale image into two bins
+            int histSize = 2;  // Only two bins
+
+            // Set the ranges for grayscale values
+            float range[] = { 0, 128, 256 };  // The upper boundary is exclusive
+            const float* histRange = { range };
+
+            cv::Mat hist;
+            bool uniform = true, accumulate = false;
+
+            // Compute the histogram
+            cv::calcHist(&img, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, uniform, accumulate);
+            // overlay the histogram on the image
+            auto hist_0 = hist.at<float>(0);
+            auto hist_1 = hist.at<float>(1);
+            // overlay hist_0 & hist_1 as text on the image
+            std::string text = "histogram ratio " + std::to_string(hist_0/hist_1) + 
+                               ", hist_0: " + std::to_string(int(hist_0)) + 
+                               ", hist_1: " + std::to_string(int(hist_1)) ;
+            cv::putText(rgbImg, text, cv::Point(10, 10), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+        }
+        try {
+            
+            auto rv = cv::imwrite(img_path, rgbImg);
+            if (!rv) {
+                RCLCPP_ERROR(node_->get_logger(), "Failed to save image %s", strerror(errno));
+            }
+        } catch (const cv::Exception& e) {
+            RCLCPP_ERROR(node_->get_logger(), "Failed to save image: %s", e.what());
+        }
+        img_count++;
+        last_pose = curr_pose;
+    } else if (distance > 0.0 || angle > 0.0) {
+        RCLCPP_DEBUG(node_->get_logger(), "Distance: %f, Angle: %f", distance, angle);
+    }
 }
 
 mono::mono(const std::shared_ptr<stella_vslam::system>& slam,
@@ -401,6 +511,10 @@ void stereo::callback(const sensor_msgs::msg::Image::ConstSharedPtr& left, const
         rectifier_->rectify(leftcv, rightcv, leftcv, rightcv);
     }
 
+    if (img_capture_) {
+        capture_image(leftcv);
+    }
+
     const rclcpp::Time tp_1 = node_->now();
     const double timestamp = rclcpp::Time(left->header.stamp).seconds();
 
@@ -419,6 +533,10 @@ void stereo::callback(const sensor_msgs::msg::Image::ConstSharedPtr& left, const
 
     if (publish_keyframes_) {
         publish_keyframes(left->header.stamp);
+    }
+
+    if (publish_status_) {
+        publish_status(left->header.stamp);
     }
 }
 

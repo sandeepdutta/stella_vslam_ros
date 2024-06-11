@@ -23,7 +23,7 @@ def conditionalLoad(context, *args, **kwargs):
                                             package='stella_vslam_ros',
                                             plugin='stella_vslam_ros::System',
                                             namespace='stella_vslam',
-                                            parameters=[{'publish_tf' : True,
+                                            parameters=[{'publish_tf' : False,
                                                          'use_exact_time' : True,
                                                          'odom2d' : False ,
                                                          'vocab_file_path' : vocab_path,
@@ -35,7 +35,13 @@ def conditionalLoad(context, *args, **kwargs):
                                                          "camera_frame": "rs_bottom_color_optical_frame",
                                                          'disable_mapping': False,
                                                          'temporal_mapping': False,
-                                                         'reset_on_start': False
+                                                         'reset_on_start': False,
+                                                         'img_capture': False,
+                                                         'img_overlay_stats': True,
+                                                         'img_capture_distance_thr':  0.25,
+                                                         'img_capture_angle_thr':  0.15,
+                                                         'img_capture_path': "./stella_images/",
+                                                         'publish_status': True,
                                                          }],
                                             extra_arguments=[{'use_intra_process_comms': True}],
                                             remappings=[
@@ -49,7 +55,7 @@ def conditionalLoad(context, *args, **kwargs):
                                      package='stella_vslam_ros',
                                      plugin='stella_vslam_ros::System',
                                      namespace='stella_vslam',
-                                     parameters=[{'publish_tf' : True,
+                                     parameters=[{'publish_tf' : False,
                                                   'use_exact_time' : True,
                                                   'odom2d' : False ,
                                                   'vocab_file_path' : vocab_path,
@@ -60,8 +66,15 @@ def conditionalLoad(context, *args, **kwargs):
                                                   'viewer': "pointcloud_publisher",
                                                   "camera_frame": "rs_bottom_color_optical_frame",
                                                   'disable_mapping': True,
-                                                  'temporal_mapping': True
+                                                  'temporal_mapping': True,
+                                                  'img_capture': False,
+                                                  'img_overlay_stats': True,
+                                                  'img_capture_distance_thr':  0.25,
+                                                  'img_capture_angle_thr':  0.25,
+                                                  'img_capture_path': "./stella_images/",
+                                                  'publish_status': True,
                                                   }],
+                                     #prefix=["valgrind --tool=callgrind  "],
                                      extra_arguments=[{'use_intra_process_comms': True}],
                                      remappings=[
                                                 ('/stella_vslam/camera/left/image_raw',  '/rs_bottom/camera/infra1/image_rect_raw'),
@@ -88,7 +101,7 @@ def generate_launch_description():
     localization = LaunchConfiguration('localization')
     vocab_arg = DeclareLaunchArgument(
         'vocab_path',
-        default_value= os.path.join(stella_vslam_dir,'config','orb_vocab.fbow'),
+        default_value= os.path.join(stella_vslam_dir,'config','trial_vocab.fbow'),
         description='Path to the vocabulary file.'
     )
     vocab_path = LaunchConfiguration('vocab_path')
@@ -122,7 +135,7 @@ def generate_launch_description():
     return LaunchDescription([
         attach_to_shared_component_container_arg,
         component_container_name_arg,
-        socket_viewer,
+    #    socket_viewer,
         localization_arg,
         vocab_arg,
         config_arg,
