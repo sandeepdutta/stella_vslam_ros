@@ -14,15 +14,25 @@ def conditionalLoad(context, *args, **kwargs):
     vocab_path      = LaunchConfiguration('vocab_path').perform(context)
     config_path     = LaunchConfiguration('config_path').perform(context)
     map_db_path     = LaunchConfiguration('map_db_path').perform(context)
-    container_name = LaunchConfiguration('component_container_name').perform(context)
+    container_name  = LaunchConfiguration('component_container_name').perform(context)
+    namespace       = LaunchConfiguration('namespace').perform(context)
+    camera_frame    = LaunchConfiguration('camera_frame').perform(context)
+    camera_backwards= LaunchConfiguration('camera_backwards').perform(context)
+
+    if camera_backwards == 'True' or camera_backwards == 'true':
+        camera_backwards_bool = True
+    else:
+        camera_backwards_bool = False
+
     actions = []
+    
     # mappng launch
     if localization == 'False' or localization == 'false':
         actions.append(LoadComposableNodes (target_container=container_name,
                                             composable_node_descriptions=[ComposableNode(
                                             package='stella_vslam_ros',
                                             plugin='stella_vslam_ros::System',
-                                            namespace='stella_vslam',
+                                            namespace=namespace,
                                             parameters=[{'publish_tf' : False,
                                                          'use_exact_time' : True,
                                                          'odom2d' : False ,
@@ -32,10 +42,11 @@ def conditionalLoad(context, *args, **kwargs):
                                                          'map_db_path_in': map_db_path,
                                                          'map_db_path_out': map_db_path,
                                                          'viewer': "pointcloud_publisher",
-                                                         "camera_frame": "rs_bottom_color_optical_frame",
+                                                         "camera_frame": camera_frame,
                                                          'disable_mapping': False,
                                                          'temporal_mapping': False,
                                                          'reset_on_start': False,
+                                                         'camera_backwards': camera_backwards_bool,
                                                          'img_capture': False,
                                                          'img_overlay_stats': True,
                                                          'img_capture_distance_thr':  0.25,
@@ -44,17 +55,14 @@ def conditionalLoad(context, *args, **kwargs):
                                                          'publish_status': True,
                                                          }],
                                             extra_arguments=[{'use_intra_process_comms': True}],
-                                            remappings=[
-                                                ('/stella_vslam/camera/left/image_raw',  '/rs_bottom/camera/infra1/image_rect_raw'),
-                                                ('/stella_vslam/camera/right/image_raw', '/rs_bottom/camera/infra2/image_rect_raw'),
-                                                ('/stella_vslam/run_slam/wheel_odom', '/diffbot_base_controller/odom'),
-                                            ])]))
+                                            remappings=[]
+                                            )]))
     else:
         actions.append(LoadComposableNodes (target_container=container_name,
                                      composable_node_descriptions=[ComposableNode(
                                      package='stella_vslam_ros',
                                      plugin='stella_vslam_ros::System',
-                                     namespace='stella_vslam',
+                                     namespace=namespace,
                                      parameters=[{'publish_tf' : False,
                                                   'use_exact_time' : True,
                                                   'odom2d' : False ,
@@ -62,11 +70,12 @@ def conditionalLoad(context, *args, **kwargs):
                                                   'setting_file_path' : config_path,
                                                   'log_level' : 'info',
                                                   'map_db_path_in': map_db_path,
-                                                  'map_db_path_out': map_db_path,
+                                    #              'map_db_path_out': map_db_path,
                                                   'viewer': "pointcloud_publisher",
-                                                  "camera_frame": "rs_bottom_color_optical_frame",
+                                                  "camera_frame": camera_frame,
                                                   'disable_mapping': True,
                                                   'temporal_mapping': True,
+                                                  'camera_backwards': camera_backwards_bool,
                                                   'img_capture': False,
                                                   'img_overlay_stats': True,
                                                   'img_capture_distance_thr':  0.25,
@@ -76,11 +85,8 @@ def conditionalLoad(context, *args, **kwargs):
                                                   }],
                                      #prefix=["valgrind --tool=callgrind  "],
                                      extra_arguments=[{'use_intra_process_comms': True}],
-                                     remappings=[
-                                                ('/stella_vslam/camera/left/image_raw',  '/rs_bottom/camera/infra1/image_rect_raw'),
-                                                ('/stella_vslam/camera/right/image_raw', '/rs_bottom/camera/infra2/image_rect_raw'),
-                                                ('/stella_vslam/run_slam/wheel_odom', '/diffbot_base_controller/odom'),
-                                     ])]))
+                                     remappings=[]
+                                     )]))
     return actions
 
 def generate_launch_description():
@@ -90,8 +96,13 @@ def generate_launch_description():
     attach_to_shared_component_container     = LaunchConfiguration('attach_to_shared_component_container')
     component_container_name_arg = DeclareLaunchArgument('component_container_name', default_value='stella_vslam_container')
     component_container_name     = LaunchConfiguration('component_container_name', default='stella_vslam_container')
-
+    namespace_arg = DeclareLaunchArgument('namespace', default_value='stella_vslam')
+    camera_frame_arg = DeclareLaunchArgument('camera_frame', default_value='rs_top_color_optical_frame')
+    camera_frame = LaunchConfiguration('camera_frame')
     stella_vslam_dir = get_package_share_directory('stella_vslam_ros')
+    camera_backwards = LaunchConfiguration('camera_backwards', default='False')
+    camera_backwards_arg = DeclareLaunchArgument('camera_backwards', default_value='False')
+
     # Launch arguments to allow command line input of config
     localization_arg = DeclareLaunchArgument(
         'localization',
@@ -141,5 +152,8 @@ def generate_launch_description():
         config_arg,
         map_db_arg,
         stella_vslam_container,
+        camera_frame_arg,
+        namespace_arg,
+        camera_backwards_arg,
         OpaqueFunction(function=conditionalLoad)
     ])

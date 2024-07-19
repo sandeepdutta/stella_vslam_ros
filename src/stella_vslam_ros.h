@@ -19,6 +19,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 
+#include "tf2/LinearMath/Transform.h"
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/buffer.h>
@@ -30,6 +31,40 @@
 #include <std_srvs/srv/empty.hpp>
 #include <stella_vslam_ros/msg/stella_vslam_status.hpp>
 namespace stella_vslam_ros {
+
+
+// Transformation converting from
+// Canonical ROS Frame (x-forward, y-left, z-up) to
+// cuVSLAM Frame       (x-right, y-up, z-backward)
+// ROS    ->  cuVSLAM
+//  x     ->    -z
+//  y     ->    -x
+//  z     ->     y
+const tf2::Transform cuvslam_pose_canonical(tf2::Matrix3x3(
+    0, -1, 0,
+    0, 0, 1,
+    -1, 0, 0
+));
+// Transformation converting from
+// cuVSLAM Frame       (x-right, y-up, z-backward) to
+// Canonical ROS Frame (x-forward, y-left, z-up)
+const tf2::Transform canonical_pose_cuvslam(cuvslam_pose_canonical.inverse());
+// Transformation converting from
+// Optical Frame    (x-right, y-down, z-forward) to
+// cuVSLAM Frame    (x-right, y-up, z-backward)
+// Optical   ->  cuVSLAM
+//    x      ->     x
+//    y      ->    -y
+//    z      ->    -z
+const tf2::Transform cuvslam_pose_optical(tf2::Matrix3x3(
+    1, 0, 0,
+    0, -1, 0,
+    0, 0, -1
+));
+// Transformation converting from
+// cuVSLAM Frame    (x-right, y-up, z-backward) to
+// Optical Frame    (x-right, y-down, z-forward)
+const tf2::Transform optical_pose_cuvslam(cuvslam_pose_optical.inverse());
 class system {
 public:
     system(const std::shared_ptr<stella_vslam::system>& slam,
@@ -64,6 +99,13 @@ public:
     std::string camera_optical_frame_;
     std::unique_ptr<tf2_ros::Buffer> tf_;
     std::shared_ptr<tf2_ros::TransformListener> transform_listener_;
+
+    // camera to baselink transform (usually provided by URDF)
+    tf2::Transform camera_to_base_link_;
+
+    // If true the camera is mounted facing backwards
+    // the camera pose & keyframes will be rotated 180 degrees around the Z axis
+    bool camera_backwards_;
 
     // If true will capture images
     bool img_capture_;
@@ -103,11 +145,28 @@ public:
 
         return eigen_transform;
     }
+
+    // Function to convert tf2::Transform to Eigen::Affine3d
+    Eigen::Affine3d tf2TransformToEigenAffine3d(const tf2::Transform& tf_transform) {
+        // Extract the rotation from tf2 Transform
+        tf2::Quaternion tf_quaternion = tf_transform.getRotation();
+        Eigen::Quaterniond eigen_quaternion(tf_quaternion.getW(), tf_quaternion.getX(), tf_quaternion.getY(), tf_quaternion.getZ());
+
+        // Extract the translation from tf2 Transform
+        tf2::Vector3 tf_translation = tf_transform.getOrigin();
+        Eigen::Translation3d eigen_translation(tf_translation.getX(), tf_translation.getY(), tf_translation.getZ());
+
+        // Create an Eigen Affine3d transform combining rotation and translation
+        Eigen::Affine3d eigen_transform = Eigen::Affine3d(eigen_translation * eigen_quaternion);
+
+        return eigen_transform;
+    }
+    
 private:
     Eigen::AngleAxisd rot_ros_to_cv_map_frame_;
 
     // Wheel odometry related variables
-    Eigen::Affine3d  wheelOdom_;
+    nav_msgs::msg::Odometry  wheelOdom_;
     std::mutex       wheelOdom_lock_;
     bool             wheelOdom_initialized_;
 
@@ -122,6 +181,7 @@ private:
     float img_capture_distance_thr_;
     float img_capture_angle_thr_;
     std::string img_capture_path_;
+
 };
 
 class mono : public system {

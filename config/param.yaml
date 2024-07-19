@@ -4,7 +4,7 @@
 #==============#
 
 Camera:
-  name: "Realsens D435 in RGBD mode"
+  name: "Realsens D435 in Stereo mode"
   setup: "stereo"
   model: "perspective"
 
@@ -24,7 +24,7 @@ Camera:
   p2: 0.0
   k3: 0.0
 
-  fps: 30.0
+  fps: 15.0
   cols: 848
   rows: 480
   color_order: "Gray"
@@ -42,7 +42,8 @@ Tracking:
   reloc_angle_threshold: 0.45
   enable_auto_relocalization: true
   enable_temporal_keyframe_only_tracking: true
-
+  use_robust_matcher_for_relocalization_request: true
+  
 Preprocessing:
   min_size: 800
   depthmap_factor: 1000.0 # Note: Set it to 1.0 for the rosbag format data set.

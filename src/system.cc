@@ -43,6 +43,7 @@ public:
     std::string map_db_path_out_;
     std::string viewer_string_;
     std::shared_ptr<std::thread> viewer_thread_;
+    std::shared_ptr<rclcpp::Service<std_srvs::srv::Empty>> save_map_srv_;
 #ifdef HAVE_PANGOLIN_VIEWER
     std::shared_ptr<pangolin_viewer::viewer> viewer_;
 #endif
@@ -70,7 +71,20 @@ System::System(
     bool disable_mapping = declare_parameter("disable_mapping", false);
     bool temporal_mapping = declare_parameter("temporal_mapping", false);
     std::string viewer = declare_parameter("viewer", "none");
-
+    save_map_srv_ = this->create_service<std_srvs::srv::Empty>(
+        "~/save_map",
+        [this](const std::shared_ptr<std_srvs::srv::Empty::Request> request,
+               std::shared_ptr<std_srvs::srv::Empty::Response> response) {
+            (void) request;
+            (void) response;
+            if (!map_db_path_out_.empty()) {
+                slam_->save_map_database(map_db_path_out_);
+                RCLCPP_INFO(this->get_logger(), "Map saved to file '%s'", map_db_path_out_.c_str());
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "Map not saved : output path is not set");
+            }
+            return;
+        });
     if (vocab_file_path.empty() || setting_file_path.empty()) {
         RCLCPP_FATAL(get_logger(), "Invalid parameter");
         return;
