@@ -135,7 +135,7 @@ find_package(rosidl_default_generators REQUIRED)
 # status messages 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/StellaVslamStatus.msg"
-  DEPENDENCIES std_msgs
+  DEPENDENCIES std_msgs geometry_msgs
 )
 # thread library
 find_package(Threads REQUIRED)

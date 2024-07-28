@@ -58,7 +58,8 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
             RCLCPP_INFO(node_->get_logger(), "Reset requested for SLAM system");
             return;
         });
-
+    timer_ = node_->create_wall_timer(std::chrono::seconds(5),
+                                      std::bind(&system::timer_callback, this));
     RCLCPP_INFO(node_->get_logger(), "System initialized : Setting Parameters");
     setParams();
     rot_ros_to_cv_map_frame_ = (Eigen::Matrix3d() << 0, 0, 1,
@@ -104,9 +105,9 @@ void system::publish_pose(const std::shared_ptr<Eigen::Matrix4d> cam_pose_wc, co
         // Translate back on X & Z to camera frame
         Eigen::Translation3d pb (camera_to_base_link_.getOrigin().x(), 0, camera_to_base_link_.getOrigin().z());
         map_to_camera = pb * map_to_camera;
-        pose_msg.pose.pose = tf2::toMsg(map_to_camera*tf2TransformToEigenAffine3d(camera_to_base_link_.inverse()));
+        pose_msg.pose.pose = last_pose_ = tf2::toMsg(map_to_camera*tf2TransformToEigenAffine3d(camera_to_base_link_.inverse()));
     } else {
-        pose_msg.pose.pose = tf2::toMsg(map_to_camera);
+        pose_msg.pose.pose = last_pose_ = tf2::toMsg(map_to_camera);
     }
 
     pose_pub_->publish(pose_msg);
@@ -241,6 +242,9 @@ void system::publish_landmarks(const rclcpp::Time& stamp) {
 
 void system::publish_status(const rclcpp::Time& stamp) {
 
+    static tf2::Transform last_wheel_pose;
+    geometry_msgs::msg::Pose ros_vo_pose;
+    static bool first_time = true;
     stella_vslam_ros::msg::StellaVslamStatus status_msg;
     status_msg.header.frame_id = map_frame_;
     status_msg.header.stamp = stamp;
@@ -249,7 +253,20 @@ void system::publish_status(const rclcpp::Time& stamp) {
     status_msg.tracking_status =            fp->get_tracking_state_int();
     status_msg.tracking_time_elapsed_ms =   fp->get_tracking_time_elapsed_ms();
     status_msg.extraction_time_elapsed_ms = fp->get_extraction_time_elapsed_ms();
-
+    if (first_time && wheelOdom_initialized_) {
+        last_wheel_pose = poseToTransform(getWheelOdom().pose.pose);
+        first_time = false;
+    }
+    if (status_msg.tracking_status == stella_vslam_ros::msg::StellaVslamStatus::LOST && !first_time) {
+        // tracking  using wheel odometry till we find ourselves again
+        tf2::Transform curr_wheel = poseToTransform(getWheelOdom().pose.pose);
+        tf2::Transform wheel_diff = last_wheel_pose.inverse() * curr_wheel;
+        ros_vo_pose = transformToPose(poseToTransform(last_pose_) * wheel_diff);
+    } else {
+        ros_vo_pose = last_pose_;
+    }
+    last_wheel_pose = poseToTransform(getWheelOdom().pose.pose);
+    status_msg.pose = ros_vo_pose;
     status_pub_->publish(status_msg);
 }
 
@@ -392,20 +409,20 @@ void system::init_pose_callback(
 }
 void system::RecordWheelOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg_wheel_odom)
 {
-  std::lock_guard<std::mutex> lock(wheelOdom_lock_);
-  wheelOdom_ = msg_wheel_odom
-  wheelOdom_initialized_ = true;
+    std::lock_guard<std::mutex> lock(wheelOdom_lock_);
+    wheelOdom_ = *msg_wheel_odom;
+    wheelOdom_initialized_ = true;
 }
 
-Eigen::Affine3d system::getWheelOdom() 
+nav_msgs::msg::Odometry system::getWheelOdom() 
 {
-  std::lock_guard<std::mutex> lock(wheelOdom_lock_);
-  return wheelOdom_;
+    std::lock_guard<std::mutex> lock(wheelOdom_lock_);
+    return wheelOdom_;
 }
 
 void system::capture_image(const cv::Mat& img) {
     static int img_count = 0;
-    static Eigen::Affine3d last_pose;
+    static nav_msgs::msg::Odometry last_pose;
 
     // first: initialize and return
     if (img_count == 0) {
@@ -413,13 +430,13 @@ void system::capture_image(const cv::Mat& img) {
         img_count++;
         return ;
     }
-    Eigen::Affine3d curr_pose = getWheelOdom();
+    nav_msgs::msg::Odometry curr_pose = getWheelOdom();
     // compute translation distance betweeen curr_pose and last_pose
-    double distance = (curr_pose.translation() - last_pose.translation()).norm();
+    double distance = 0.0; // (curr_pose.translation() - last_pose.translation()).norm();
     // compute angle in radians between curr_pose and last_pose
-    Eigen::Quaterniond q1(curr_pose.rotation());
-    Eigen::Quaterniond q2(last_pose.rotation());
-    double angle = q1.angularDistance(q2);
+    //Eigen::Quaterniond q1(curr_pose.rotation());
+    //Eigen::Quaterniond q2(last_pose.rotation());
+    double angle = 0.0; //q1.angularDistance(q2);
     
     if (distance >= img_capture_distance_thr_ || angle >= img_capture_angle_thr_) {
         // Create an image to hold the RGB result
@@ -464,6 +481,15 @@ void system::capture_image(const cv::Mat& img) {
         last_pose = curr_pose;
     } else if (distance > 0.0 || angle > 0.0) {
         RCLCPP_DEBUG(node_->get_logger(), "Distance: %f, Angle: %f", distance, angle);
+    }
+}
+
+void system::timer_callback() {
+    std::lock_guard<std::mutex> lock(timer_lock_);
+    if (image_received_) {
+        image_received_ = false;
+    } else {
+        RCLCPP_WARN(node_->get_logger(), "No image received for a long time");
     }
 }
 
@@ -562,7 +588,10 @@ void stereo::callback(const sensor_msgs::msg::Image::ConstSharedPtr& left, const
     if (img_capture_) {
         capture_image(leftcv);
     }
-
+    {
+        std::lock_guard<std::mutex> lock(timer_lock_);
+        image_received_ = true; // tell the timer we have received something
+    }
     const rclcpp::Time tp_1 = node_->now();
     const double timestamp = rclcpp::Time(left->header.stamp).seconds();
     try {

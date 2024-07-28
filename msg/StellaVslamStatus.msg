@@ -7,3 +7,4 @@ std_msgs/Header header
 int32 tracking_status 
 float32 tracking_time_elapsed_ms
 float32 extraction_time_elapsed_ms
+geometry_msgs/Pose pose

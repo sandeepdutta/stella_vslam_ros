@@ -81,6 +81,7 @@ public:
     rclcpp::Node* node_;
     rmw_qos_profile_t custom_qos_;
     cv::Mat mask_;
+    geometry_msgs::msg::Pose last_pose_; // last computed pose
     std::vector<double> track_times_;
     std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> pose_pub_;
     std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_pub_;
@@ -162,6 +163,30 @@ public:
         return eigen_transform;
     }
     
+    inline tf2::Transform poseToTransform(const geometry_msgs::msg::Pose &pose) {
+        tf2::Quaternion quaternion(pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w);
+        tf2::Vector3 translation(pose.position.x, pose.position.y, pose.position.z);
+        return tf2::Transform(quaternion, translation);
+    }
+
+    inline geometry_msgs::msg::Pose transformToPose(const tf2::Transform &transform) {
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = transform.getOrigin().x();
+        pose.position.y = transform.getOrigin().y();
+        pose.position.z = transform.getOrigin().z();
+        pose.orientation.x = transform.getRotation().x();
+        pose.orientation.y = transform.getRotation().y();
+        pose.orientation.z = transform.getRotation().z();
+        pose.orientation.w = transform.getRotation().w();
+        return pose;
+    }
+    // debug timer
+    rclcpp::TimerBase::SharedPtr timer_;
+    std::mutex timer_lock_;
+    void timer_callback();
+    // timer tracks
+    bool image_received_ {false};
+
 private:
     Eigen::AngleAxisd rot_ros_to_cv_map_frame_;
 
@@ -174,14 +199,12 @@ private:
     // Callback function for wheel odometry
     void RecordWheelOdom(const nav_msgs::msg::Odometry::ConstSharedPtr msg_wheel_odom);
     // Returns the wheel Odometry Transform
-    Eigen::Affine3d getWheelOdom() ;
-
+    nav_msgs::msg::Odometry getWheelOdom() ;
 
     // Capture image related variables
     float img_capture_distance_thr_;
     float img_capture_angle_thr_;
     std::string img_capture_path_;
-
 };
 
 class mono : public system {
