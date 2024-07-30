@@ -35,6 +35,7 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
       keyframes_2d_pub_(node_->create_publisher<geometry_msgs::msg::PoseArray>("~/keyframes_2d", 1)),
       pointcloud_pub_(node_->create_publisher<sensor_msgs::msg::PointCloud2>("~/landmarks", 1)),
       status_pub_(node_->create_publisher<stella_vslam_ros::msg::StellaVslamStatus>("~/status", 1)),
+      setpose_pub_(node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/set_pose", 1)),
       map_to_odom_broadcaster_(std::make_shared<tf2_ros::TransformBroadcaster>(node_)),
       tf_(std::make_unique<tf2_ros::Buffer>(node_->get_clock())),
       transform_listener_(std::make_shared<tf2_ros::TransformListener>(*tf_)) {
@@ -242,9 +243,10 @@ void system::publish_landmarks(const rclcpp::Time& stamp) {
 
 void system::publish_status(const rclcpp::Time& stamp) {
 
-    static tf2::Transform last_wheel_pose;
+    static tf2::Transform last_known_wheel_pose;
     geometry_msgs::msg::Pose ros_vo_pose;
-    static bool first_time = true;
+    static bool tracking_lost = false;
+
     stella_vslam_ros::msg::StellaVslamStatus status_msg;
     status_msg.header.frame_id = map_frame_;
     status_msg.header.stamp = stamp;
@@ -253,19 +255,36 @@ void system::publish_status(const rclcpp::Time& stamp) {
     status_msg.tracking_status =            fp->get_tracking_state_int();
     status_msg.tracking_time_elapsed_ms =   fp->get_tracking_time_elapsed_ms();
     status_msg.extraction_time_elapsed_ms = fp->get_extraction_time_elapsed_ms();
-    if (first_time && wheelOdom_initialized_) {
-        last_wheel_pose = poseToTransform(getWheelOdom().pose.pose);
-        first_time = false;
-    }
-    if (status_msg.tracking_status == stella_vslam_ros::msg::StellaVslamStatus::LOST && !first_time) {
-        // tracking  using wheel odometry till we find ourselves again
-        tf2::Transform curr_wheel = poseToTransform(getWheelOdom().pose.pose);
-        tf2::Transform wheel_diff = last_wheel_pose.inverse() * curr_wheel;
-        ros_vo_pose = transformToPose(poseToTransform(last_pose_) * wheel_diff);
+
+    // if we loose tracking then use the wheel odometry to estimate the pose 
+    if (status_msg.tracking_status == stella_vslam_ros::msg::StellaVslamStatus::LOST && wheelOdom_initialized_) {
+        tf2::Transform curr_wheel = poseToTransform(getWheelOdom().pose.pose);      // current wheel odometry
+        tf2::Transform wheel_diff = last_known_wheel_pose.inverse() * curr_wheel;   // difference between last known wheel odometry and current wheel odometry
+        ros_vo_pose = transformToPose(poseToTransform(last_pose_) * wheel_diff);    // fuse with last known camera pose
+        tracking_lost = true;
+        if (publish_wheel_odom_fused_pose_) {
+            // Create odometry message and update it with last camera pose fused with wheel odometry
+            nav_msgs::msg::Odometry pose_msg;
+            pose_msg.header.stamp = stamp;
+            pose_msg.header.frame_id = map_frame_;
+            pose_msg.child_frame_id = camera_frame_;
+            pose_msg.pose.pose = ros_vo_pose;
+            pose_pub_->publish(pose_msg);
+        }
     } else {
         ros_vo_pose = last_pose_;
+        last_known_wheel_pose = poseToTransform(getWheelOdom().pose.pose);
+        // if we a recovering from tracking lost then send a /set_pose message
+        // this help reset ekf filter
+        if (tracking_lost) {
+            geometry_msgs::msg::PoseWithCovarianceStamped set_pose_msg;
+            set_pose_msg.header.stamp = stamp;
+            set_pose_msg.header.frame_id = map_frame_;
+            set_pose_msg.pose.pose = ros_vo_pose;
+            setpose_pub_->publish(set_pose_msg);
+            tracking_lost = false;
+        } 
     }
-    last_wheel_pose = poseToTransform(getWheelOdom().pose.pose);
     status_msg.pose = ros_vo_pose;
     status_pub_->publish(status_msg);
 }
@@ -326,6 +345,10 @@ void system::setParams() {
     publish_status_ = false;
     publish_status_ = node_->declare_parameter("publish_status", publish_status_);
     RCLCPP_INFO(node_->get_logger(), "publish_status: %d", publish_status_);
+
+    publish_wheel_odom_fused_pose_ = false;
+    publish_wheel_odom_fused_pose_ = node_->declare_parameter("publish_wheel_odom_fused_pose", publish_wheel_odom_fused_pose_);
+    RCLCPP_INFO(node_->get_logger(), "publish_wheel_odom_fused_pose: %d", publish_wheel_odom_fused_pose_);
 
     img_capture_path_ = "";
     img_capture_path_ = node_->declare_parameter("img_capture_path", img_capture_path_);

@@ -88,6 +88,7 @@ public:
     std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_2d_pub_;
     std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>> pointcloud_pub_;
     std::shared_ptr<rclcpp::Publisher<stella_vslam_ros::msg::StellaVslamStatus>> status_pub_;
+    std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>> setpose_pub_;
     std::shared_ptr<rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>>
         init_pose_sub_;
     std::shared_ptr<rclcpp::Subscription<nav_msgs::msg::Odometry>> wheel_odom_sub_;
@@ -114,6 +115,9 @@ public:
 
     // If true will publish the status of the SLAM system
     bool publish_status_;
+
+    // If true will publish wheel odometry fuxsed with last know pose if tracking is lost
+    bool publish_wheel_odom_fused_pose_;
 
     // If true, publish tf from map_frame to odom_frame
     bool publish_tf_;
