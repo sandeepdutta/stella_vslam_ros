@@ -119,6 +119,9 @@ public:
     // If true will publish wheel odometry fuxsed with last know pose if tracking is lost
     bool publish_wheel_odom_fused_pose_;
 
+    // /set_pose send time in seconds
+    double set_pose_timeout_;
+    
     // If true, publish tf from map_frame to odom_frame
     bool publish_tf_;
 

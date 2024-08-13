@@ -246,11 +246,15 @@ void system::publish_status(const rclcpp::Time& stamp) {
     static tf2::Transform last_known_wheel_pose;
     geometry_msgs::msg::Pose ros_vo_pose;
     static bool tracking_lost = false;
-
+    static rclcpp::Time last_stamp = rclcpp::Time(0);
     stella_vslam_ros::msg::StellaVslamStatus status_msg;
     status_msg.header.frame_id = map_frame_;
     status_msg.header.stamp = stamp;
 
+    // initialize last stamp first time
+    if (last_stamp.nanoseconds() == 0 && last_stamp.seconds() == 0) {
+        last_stamp = stamp;
+    }
     auto fp = slam_->get_frame_publisher();
     status_msg.tracking_status =            fp->get_tracking_state_int();
     status_msg.tracking_time_elapsed_ms =   fp->get_tracking_time_elapsed_ms();
@@ -274,15 +278,19 @@ void system::publish_status(const rclcpp::Time& stamp) {
     } else {
         ros_vo_pose = last_pose_;
         last_known_wheel_pose = poseToTransform(getWheelOdom().pose.pose);
+
+        // compute difference between current stamp & last stamp in seconds
+        double diff = (stamp - last_stamp).seconds();
         // if we a recovering from tracking lost then send a /set_pose message
         // this help reset ekf filter
-        if (tracking_lost) {
+        if (tracking_lost || diff > set_pose_timeout_) {
             geometry_msgs::msg::PoseWithCovarianceStamped set_pose_msg;
             set_pose_msg.header.stamp = stamp;
             set_pose_msg.header.frame_id = map_frame_;
             set_pose_msg.pose.pose = ros_vo_pose;
             setpose_pub_->publish(set_pose_msg);
             tracking_lost = false;
+            last_stamp = stamp;
         } 
     }
     status_msg.pose = ros_vo_pose;
@@ -345,6 +353,10 @@ void system::setParams() {
     publish_status_ = false;
     publish_status_ = node_->declare_parameter("publish_status", publish_status_);
     RCLCPP_INFO(node_->get_logger(), "publish_status: %d", publish_status_);
+
+    set_pose_timeout_ = 5.0;
+    set_pose_timeout_ = node_->declare_parameter("set_pose_timeout", set_pose_timeout_);
+    RCLCPP_INFO(node_->get_logger(), "set_pose_timeout: %f", set_pose_timeout_);
 
     publish_wheel_odom_fused_pose_ = false;
     publish_wheel_odom_fused_pose_ = node_->declare_parameter("publish_wheel_odom_fused_pose", publish_wheel_odom_fused_pose_);
